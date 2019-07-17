@@ -35,29 +35,12 @@ for (i in 1920:2019) {
   }
 }
 
-airplaneCrashData[] <- lapply(airplaneCrashData, as.character)
+airplaneCrashData[] <- lapply(airplaneCrashData, as.character) # remove factor levels
 colnames(airplaneCrashData) <- c("date","time","location","operator","flight","route","ACtype","registration","cnln","aboard","fatalities","ground","summary")
+rm(list=ls())
+write.csv(airplaneCrashData,col.names=TRUE,file="airplaneCrashData.csv",na="NA")
 
-is.na(airplaneCrashData) <- airplaneCrashData == "?"
 
-aboard <- gsub("\\D+"," ",airplaneCrashData$aboard) # extract 1st integer to get absolute counts
-aboard_split <- strsplit(aboard," ")
-airplaneCrashData$aboard <- sapply(aboard_split, "[[", 1) # extract 1st entry of sublist
 
-fatalities <- gsub("\\D+"," ",airplaneCrashData$fatalities) # extract 1st integer to get absolute counts
-fatalities_split <- strsplit(fatalities," ")
-airplaneCrashData$fatalities <- sapply(fatalities_split, "[[", 1) # extract 1st entry of sublist
-
-airplane_uses <- function(x) {
-  if(grepl("Military",x,ignore.case=TRUE)) {
-    return("Military")
-  } else {
-    return("Civil")
-  }
-  return(x)
-}
-
-uses <- unlist(lapply(airplaneCrashData$operator,airplane_uses))
-airplaneCrashData$uses <- uses
 
 
