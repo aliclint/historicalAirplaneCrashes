@@ -1,39 +1,29 @@
-source("airplaneCrashData.R")
+source("airplane_crash_web_scrape.R")
 file = "airplaneCrashData.csv"
 airplaneCrashData <- read.csv(file,header=T,stringsAsFactors=FALSE)
 
+source("airplane_crash_functions.R")
 
+airplaneCrashData$date <- as.Date(airplaneCrashData$date, "%B %d, %Y")
+airplaneCrashData$time <- as.numeric(airplaneCrashData$time)
 
 aboard <- gsub("\\D+"," ",airplaneCrashData$aboard) # extract 1st integer to get absolute counts
 aboard_split <- strsplit(aboard," ")
-airplaneCrashData$aboard <- sapply(aboard_split, "[[", 1) # extract 1st entry of sublist
+airplaneCrashData$aboard <- as.numeric(sapply(aboard_split, "[[", 1)) # extract 1st entry of sublist
 
 fatalities <- gsub("\\D+"," ",airplaneCrashData$fatalities) # extract 1st integer to get absolute counts
 fatalities_split <- strsplit(fatalities," ")
-airplaneCrashData$fatalities <- sapply(fatalities_split, "[[", 1) # extract 1st entry of sublist
+airplaneCrashData$fatalities <- as.numeric(sapply(fatalities_split, "[[", 1)) # extract 1st entry of sublist
+
+airplaneCrashData$ground <- as.numeric(airplaneCrashData$ground)
+
+# proportion dead
+airplaneCrashData$deadProp <- (airplaneCrashData$fatalities + airplaneCrashData$ground) / airplaneCrashData$aboard
 
 # extract countries
-
-library(maps) #library to string match with countries 
-##https://stackoverflow.com/questions/47999506/matching-an-extracting-country-name-from-character-string-in-r
-
-extract_country <- function(s) {
-  data(world.cities)
-  raw <- s
-  ###Removing punctuation
-  raw <- gsub("[[:punct:]\n]","",raw)
-  # Split data at word boundaries
-  raw2 <- strsplit(raw, " ")
-  # Match on country in world.countries
-  CountryList_raw <- (lapply(raw2, function(x)x[which(toupper(x) %in% toupper(world.cities$country.etc))]))
-  
-  extracted_country <- do.call(rbind, lapply(CountryList_raw, as.data.frame))
-  extracted_country <- unlist(extracted_country)
-}
-
 # routes
 route_split <- strsplit(airplaneCrashData$route," - ")
-index_shift<- sapply(origin_split,length) # find indices of each sublist when unlisted
+index_shift<- sapply(route_split,length) # find indices of each sublist when unlisted
 
 route_split <- unlist(route_split) # flatten for cumsum to work
 names(index_shift) <- c()
@@ -58,23 +48,11 @@ location <- as.character(extract_country(airplaneCrashData$location))
 names(location) <- c()
 length(unique(location)) #155 countries which are less than 195 countries
 
-
-
-
-
-airplane_uses <- function(x) {
-  if(grepl("Military",x,ignore.case=TRUE)) {
-    return("Military")
-  } else {
-    return("Civil")
-  }
-  return(x)
-}
-
+# determine if airplane is civil or military
 uses <- unlist(lapply(airplaneCrashData$operator,airplane_uses))
 airplaneCrashData$uses <- uses
 
-airplaneCrashData$date <- as.Date(airplaneCrashData$date, "%B %d, %Y")
-airplaneCrashData$time <- as.numeric(airplaneCrashData$time)
+# String search whether plane crash was known or unknown
+known <- unlist(lapply(airplaneCrashData$summary,airplane_known))
 
 is.na(airplaneCrashData) <- airplaneCrashData == "?"
