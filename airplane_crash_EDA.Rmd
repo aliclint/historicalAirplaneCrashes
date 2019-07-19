@@ -1,26 +1,47 @@
-library(tidyverse)
-source("airplane_crash_functions.R")
+---
+title: "Airplane Crash EDA"
+output: html_document
+---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+source("airplane_crash_functions.R")
+library(tidyverse)
+```
+
+## Scrape and read file into data
+```{r cars}
 file = "airplaneCrashData.csv"
 if(!TRUE %in% (list.files() == file)) { # Checks if file exists in local directory.
   source("airplane_crash_web_scrape.R")
 }
-
 airplane.crash <- read.csv(file,header=T,stringsAsFactors=FALSE)
+```
 
+```{r data-cleaning, echo=FALSE, include=FALSE}
+# Processing date into month and year.
+airplane.crash$date <- as.Date(airplane.crash$date, "%B %d, %Y")
+airplane.crash$month <- format(as.Date(airplane.crash$date), "%m")
+airplane.crash$year <- format(as.Date(airplane.crash$date), "%Y")
 
+# 24H time of the crash. 
+airplane.crash$time <- as.numeric(airplane.crash$time)
 
 # Determines total number of people on the plane.
 aboard <- gsub("\\D+"," ",airplane.crash$aboard) # extract 1st integer to get absolute counts
 aboard.split <- strsplit(aboard," ")
-airplane.crash$aboard <- sapply(aboard.split, "[[", 1) # extract 1st entry of sublist
+airplane.crash$aboard <- as.numeric(sapply(aboard.split, "[[", 1)) # extract 1st entry of sublist
 
 # Determines fatalities onboard the plane.
 fatalities <- gsub("\\D+"," ",airplane.crash$fatalities) # extract 1st integer to get absolute counts
 fatalities.split <- strsplit(fatalities," ")
-airplane.crash$fatalities <- sapply(fatalities.split, "[[", 1) # extract 1st entry of sublist
+airplane.crash$fatalities <- as.numeric(sapply(fatalities.split, "[[", 1)) # extract 1st entry of sublist
 
-is.na(airplane.crash) <- airplane.crash == "?"
+# Fatalaties on the ground.
+airplane.crash$ground <- as.numeric(airplane.crash$ground)
+
+# Proportion of passengers dead aboard and on the ground.
+airplane.crash$dead.prop <- (airplane.crash$fatalities + airplane.crash$ground) / airplane.crash$aboard
 
 # Process the route feature.
 route.split <- strsplit(airplane.crash$route," - ")
@@ -31,10 +52,9 @@ names(index.shift) <- c()
 # Determines the country of origin if applicable.
 index_origin <- cumsum(index.shift) - (index.shift - 1)
 origin.raw <- route.split[index_origin]
-origin <- as.character(ExtractCountry(origin.raw))
+origin <- as.character((origin.raw))
 names(origin) <- c()
 airplane.crash$origin <- origin
-
 
 # Determines the country of destination if applicable.
 index.destination <- cumsum(index.shift)
@@ -43,16 +63,13 @@ destination <- as.character(ExtractCountry(destination.raw))
 names(destination) <- c()
 airplane.crash$destination <- destination
 
-# count NA entries
-sum(is.na(airplane.crash$location)/nrow(airplane.crash)) # less than 0.07% of locations are NA
-
-
 # Determines if this is an international or domestic flight if applicable.
-airplane.crash$international <- destination == origin 
+airplane.crash$international <- destination == location 
 
 # Determines the country of the crash.
-location <- ExtractLocation(airplane.crash$location)
-location[which(location == "California")] <- "United States of America"
+location <- as.character(ExtractCountry(airplane.crash$location))
+names(location) <- c()
+length(unique(location)) #155 countries which are less than 195 countries
 airplane.crash$location <- location
 
 # Determines whether the plane is civil or military.
@@ -62,38 +79,12 @@ airplane.crash$uses <- uses
 # Determines whether the plane crash was known or unknown.
 known <- unlist(lapply(airplane.crash$summary,ExtractCrashCauseKnown))
 airplane.crash$known <- known
+```
 
-rowSums(is.na(airplane.crash))
+```{r date-time-plot, echo=FALSE}
+airplane.crash %>% group_by(month,year) %>% count() %>% ggplot(aes(x=month,y=n)) + geom_boxplot()
+```
 
-# Convert character to numeric
-airplane.crash$fatalities <- as.numeric(airplane.crash$fatalities)
+```{r}
 
-airplane.crash$aboard <- as.numeric(airplane.crash$aboard)
-airplane.crash$ground <- as.numeric(airplane.crash$ground)
-
-
-
-
-# Processing date into month and year.
-airplane.crash$date <- as.Date(airplane.crash$date, "%B %d, %Y")
-airplane.crash$month <- format(as.Date(airplane.crash$date), "%m")
-airplane.crash$year <- format(as.Date(airplane.crash$date), "%Y")
-
-
-
-# 24H time of the crash. 
-airplane.crash$time <- as.numeric(airplane.crash$time)
-
-airplane.crash.cleaned <- airplane.crash %>% select(date, month, year, location, operator, ACtype, fatalities, ground, aboard, uses, known)
-colSums(is.na(airplane.crash.cleaned))
-nrow(airplane.crash.cleaned)
-
-airplane.crash.cleaned <- na.omit(airplane.crash.cleaned)
-nrow(airplane.crash.cleaned)
-
-#4934 final rows from 5002, lose 1.355 of data 
-
-
-airplane.crash.cleaned %>% group_by(uses) %>% count()
-airplane.crash.cleaned %>% filter(uses=="Civil") %>% group_by(location) %>% count() %>% arrange(desc(n))
-airplane.crash.cleaned %>% filter (uses=="Military") %>% group_by(location) %>% count() %>% arrange(desc(n))
+```
