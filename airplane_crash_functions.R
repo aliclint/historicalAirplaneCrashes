@@ -28,11 +28,14 @@ ExtractCountry <- function(s) {
   # Split data at word boundaries
   raw2 <- strsplit(raw, " ")
   # Match on country in world.countries
-  extracted.country <- (lapply(raw2, function(x)x[which(toupper(x) %in% toupper(world.cities$country.etc))]))
   
-  #extracted.country <- do.call(rbind, lapply(CountryList.Raw, as.data.frame))
+  extracted.country <- do.call(rbind, lapply(CountryList.Raw, as.data.frame))
   extracted.country <- unlist(extracted.country)
 }
+
+test <- airplane.crash$location
+test <- gsub("[[:punct:]\n]","",test)
+
 
 ExtractLocation <- function(s) {
   s <- sapply(s, as.character)

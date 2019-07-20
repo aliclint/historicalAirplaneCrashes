@@ -4,21 +4,52 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
 source("airplane_crash_functions.R")
 library(tidyverse)
+library(tidytext)
+library(tidyr)
 ```
 
 ## Scrape and read file into data
-```{r cars}
+```{r read-data}
 file = "airplaneCrashData.csv"
 if(!TRUE %in% (list.files() == file)) { # Checks if file exists in local directory.
   source("airplane_crash_web_scrape.R")
 }
+
 airplane.crash <- read.csv(file,header=T,stringsAsFactors=FALSE)
 ```
 
-```{r data-cleaning, echo=FALSE, include=FALSE}
+```{r data-cleaning}
+# Determines total number of people on the plane.
+aboard <- gsub("\\D+"," ",airplane.crash$aboard) # extract 1st integer to get absolute counts
+aboard.split <- strsplit(aboard," ")
+airplane.crash$aboard <- sapply(aboard.split, "[[", 1) # extract 1st entry of sublist
+
+# Determines fatalities onboard the plane.
+fatalities <- gsub("\\D+"," ",airplane.crash$fatalities) # extract 1st integer to get absolute counts
+fatalities.split <- strsplit(fatalities," ")
+airplane.crash$fatalities <- sapply(fatalities.split, "[[", 1) # extract 1st entry of sublist
+
+is.na(airplane.crash) <- airplane.crash == "?" # noticed the website used ? as NA
+
+# Determines the country of the crash.
+location <- ExtractLocation(airplane.crash$location)
+location <- as.character(location)
+location[location %in% state.name] <- "United States of America"  # noticed alot of US states
+location[location == "USSR"] <- "Russia" # 
+airplane.crash$location <- location
+
+# Determines whether the plane is civil or military.
+uses <- unlist(lapply(airplane.crash$operator,ExtractAirplaneUses))
+airplane.crash$uses <- uses
+
+# Convert character to numeric
+airplane.crash$fatalities <- as.numeric(airplane.crash$fatalities)
+airplane.crash$aboard <- as.numeric(airplane.crash$aboard)
+airplane.crash$ground <- as.numeric(airplane.crash$ground)
+
 # Processing date into month and year.
 airplane.crash$date <- as.Date(airplane.crash$date, "%B %d, %Y")
 airplane.crash$month <- format(as.Date(airplane.crash$date), "%m")
@@ -26,65 +57,87 @@ airplane.crash$year <- format(as.Date(airplane.crash$date), "%Y")
 
 # 24H time of the crash. 
 airplane.crash$time <- as.numeric(airplane.crash$time)
+airplane.crash.cleaned <- airplane.crash %>% select(month, year, location, operator, ACtype, fatalities, aboard, uses, summary)
+airplane.na.count <- colSums(is.na(airplane.crash.cleaned))
+#nrow(airplane.crash.cleaned)
+airplane.crash.cleaned <- na.omit(airplane.crash.cleaned)
+#nrow(airplane.crash.cleaned)
 
-# Determines total number of people on the plane.
-aboard <- gsub("\\D+"," ",airplane.crash$aboard) # extract 1st integer to get absolute counts
-aboard.split <- strsplit(aboard," ")
-airplane.crash$aboard <- as.numeric(sapply(aboard.split, "[[", 1)) # extract 1st entry of sublist
-
-# Determines fatalities onboard the plane.
-fatalities <- gsub("\\D+"," ",airplane.crash$fatalities) # extract 1st integer to get absolute counts
-fatalities.split <- strsplit(fatalities," ")
-airplane.crash$fatalities <- as.numeric(sapply(fatalities.split, "[[", 1)) # extract 1st entry of sublist
-
-# Fatalaties on the ground.
-airplane.crash$ground <- as.numeric(airplane.crash$ground)
-
-# Proportion of passengers dead aboard and on the ground.
-airplane.crash$dead.prop <- (airplane.crash$fatalities + airplane.crash$ground) / airplane.crash$aboard
-
-# Process the route feature.
-route.split <- strsplit(airplane.crash$route," - ")
-index.shift<- sapply(route.split,length) # find indices of each sublist when unlisted
-route.split <- unlist(route.split) # flatten for cumsum algorithm to work
-names(index.shift) <- c()
-
-# Determines the country of origin if applicable.
-index_origin <- cumsum(index.shift) - (index.shift - 1)
-origin.raw <- route.split[index_origin]
-origin <- as.character((origin.raw))
-names(origin) <- c()
-airplane.crash$origin <- origin
-
-# Determines the country of destination if applicable.
-index.destination <- cumsum(index.shift)
-destination.raw <- route.split[index.destination]
-destination <- as.character(ExtractCountry(destination.raw))
-names(destination) <- c()
-airplane.crash$destination <- destination
-
-# Determines if this is an international or domestic flight if applicable.
-airplane.crash$international <- destination == location 
-
-# Determines the country of the crash.
-location <- as.character(ExtractCountry(airplane.crash$location))
-names(location) <- c()
-length(unique(location)) #155 countries which are less than 195 countries
-airplane.crash$location <- location
-
-# Determines whether the plane is civil or military.
-uses <- unlist(lapply(airplane.crash$operator,ExtractAirplaneUses))
-airplane.crash$uses <- uses
-
-# Determines whether the plane crash was known or unknown.
-known <- unlist(lapply(airplane.crash$summary,ExtractCrashCauseKnown))
-airplane.crash$known <- known
+#4934 final rows from 5002, lose 1.355% of data, should be ok
+airplane.crash.cleaned <- airplane.crash.cleaned %>% mutate(deadProp = fatalities/aboard)
 ```
 
-```{r date-time-plot, echo=FALSE}
-airplane.crash %>% group_by(month,year) %>% count() %>% ggplot(aes(x=month,y=n)) + geom_boxplot()
+```{r text-mining}
+self_defined_stop_words <-tibble(word=c("crashed","cargo","en")) # 
+
+tokens <- airplane.crash.cleaned %>% unnest_tokens(word, summary) %>% anti_join(stop_words) %>% anti_join(self_defined_stop_words)
+unigram_count <- tokens %>%
+count(word, sort = TRUE) # single words are not as meaningful, we need context
+
+bigrams <- airplane.crash.cleaned %>% unnest_tokens(bigram, summary, token = "ngrams", n = 2)
+bigrams_separated <- bigrams  %>%
+  separate(bigram, c("word1", "word2"), sep = " ")
+
+bigrams_filtered <- bigrams_separated %>%
+  filter(!word1 %in% stop_words$word) %>%
+  filter(!word2 %in% stop_words$word) %>%
+  filter(!word1 %in% self_defined_stop_words$word) %>%
+  filter(!word2 %in% self_defined_stop_words$word)
+bigram_counts <- bigrams_filtered %>% 
+  count(word1, word2, sort = TRUE)
+bigrams_united <- bigrams_filtered %>%
+  unite(bigram, word1, word2, sep = " ")
+top_bigrams <- bigrams_united %>% count(bigram, sort=TRUE) %>% top_n(10) # top 10 bigrams of reason of crash
+
+# plot bigrams
+top.bigram.plot <- top_bigrams %>% 
+  mutate(bigram = reorder(bigram, n)) %>%
+  ggplot(aes(bigram, n,fill=bigram,color=bigram)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  ggtitle("Top 10 causes for airplane crash") +
+  xlab("Causes") + ylab("Frequency")+ theme(legend.position = "none")
+top.bigram.plot
+```
+
+
+```{r}
+airplane.crash.cleaned %>% group_by(year,month) %>% summarise(tot = sum(fatalities)) %>% ggplot(aes(y=tot,x=month,fill=month)) + geom_boxplot() + ggtitle("Boxplot of monthly fatalities") + scale_x_discrete(labels=c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")) +
+  xlab("Month") +
+  ylab("Total Fatalities")+ theme(legend.position = "none")
 ```
 
 ```{r}
-
+airplane.crash.cleaned %>% drop_na()%>% group_by(year) %>% summarise(total.dead = sum(fatalities), total.aboard = sum(aboard)) %>% ggplot(aes(y=total.dead/total.aboard*100,x=year,group=10)) + geom_point() + geom_smooth(method='lm') +
+    xlab("Year") + ylab("% of Fatalities") + 
+    scale_x_discrete(breaks = seq(from = 1908, to = 2019, by = 10)) +
+    ggtitle("Percentage of fatalities by year, 1908 - 2019")
 ```
+
+```{r}
+top.locations <- airplane.crash.cleaned %>% group_by(location) %>% count() %>% arrange(desc(n)) %>% ungroup() %>% top_n(5)
+   top.locations %>% mutate(location=reorder(location,n)) %>% ggplot(aes(location, n)) + geom_col() + coord_flip() +
+     ggtitle("Number of plane crashes by country") + xlab("Country") + ylab("Frequency")+ theme(legend.position = "none")
+   
+   top.locations[which(top.locations$location == 'United States of America'),] = 'USA'
+   top.locations[which(top.locations$location == 'England'),] = 'UK'
+   
+   anti_join(top.locations, map.world, by = c('location'='region')) 
+   map.world <- map_data('world')
+   map.world <- map.world %>% filter(region != "Antarctica")
+top.map.locations <- full_join( map.world, top.locations, by = c('region' = 'location')) 
+
+cnames <- aggregate(cbind(long, lat) ~ region, data=test, FUN=mean)
+top.cnames <- inner_join(cnames,top.locations,by=c('location'='region'))
+
+ggplot(top.map.locations, aes( x = long, y = lat, group = group)) +
+  geom_polygon(aes(fill = n))
+
+top.map.locations %>% ggplot(aes(long,lat)) + geom_polygon(aes(group=group,fill=n)) + geom_polygon(aes(group=group),fill=NA,colour='black') +
+  geom_text(data=top.cnames,aes(label = region) , size = 4)
+```
+
+
+
+  
