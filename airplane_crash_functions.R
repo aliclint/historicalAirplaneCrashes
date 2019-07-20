@@ -33,10 +33,6 @@ ExtractCountry <- function(s) {
   extracted.country <- unlist(extracted.country)
 }
 
-test <- airplane.crash$location
-test <- gsub("[[:punct:]\n]","",test)
-
-
 ExtractLocation <- function(s) {
   s <- sapply(s, as.character)
   s <- gsub(".*,", "", s)

@@ -63,7 +63,7 @@ airplane.na.count <- colSums(is.na(airplane.crash.cleaned))
 airplane.crash.cleaned <- na.omit(airplane.crash.cleaned)
 #nrow(airplane.crash.cleaned)
 
-#4934 final rows from 5002, lose 1.355% of data, should be ok
+#4934 final rows from 5002, lose 1.355% of data, should be ok removing missing entries
 airplane.crash.cleaned <- airplane.crash.cleaned %>% mutate(deadProp = fatalities/aboard)
 ```
 
@@ -116,26 +116,46 @@ airplane.crash.cleaned %>% drop_na()%>% group_by(year) %>% summarise(total.dead 
 ```
 
 ```{r}
-top.locations <- airplane.crash.cleaned %>% group_by(location) %>% count() %>% arrange(desc(n)) %>% ungroup() %>% top_n(5)
-   top.locations %>% mutate(location=reorder(location,n)) %>% ggplot(aes(location, n)) + geom_col() + coord_flip() +
-     ggtitle("Number of plane crashes by country") + xlab("Country") + ylab("Frequency")+ theme(legend.position = "none")
+top.locations <- airplane.crash.cleaned %>% group_by(location) %>% count() %>% arrange(desc(n)) %>% ungroup() %>% top_n(10)
+top.locations$n <- as.numeric(top.locations$n)
+   top.locations %>% mutate(location=reorder(location,n)) %>% ggplot(aes(location, n)) + geom_col(aes(fill=as.factor(n))) + coord_flip() +
+     ggtitle("Number of plane crashes by country") + xlab("Country") + ylab("Frequency")+ theme(legend.position = "none")  + scale_fill_brewer(palette='Spectral',direction=-1) +
+     theme(axis.ticks=element_blank()
+             ,axis.text=element_blank()
+           ) +
+    geom_label(aes(y = 0.7*n, label = n))
    
-   top.locations[which(top.locations$location == 'United States of America'),] = 'USA'
-   top.locations[which(top.locations$location == 'England'),] = 'UK'
-   
-   anti_join(top.locations, map.world, by = c('location'='region')) 
+   top.locations[which(top.locations$location == 'United States of America'),1] = 'USA'
+   top.locations[which(top.locations$location == 'England'),1] = 'UK'
    map.world <- map_data('world')
    map.world <- map.world %>% filter(region != "Antarctica")
-top.map.locations <- full_join( map.world, top.locations, by = c('region' = 'location')) 
+   #anti_join(top.locations, map.world, by = c('location'='region')) 
+  top.map.locations <- left_join( map.world, top.locations, by = c('region' = 'location')) 
 
-cnames <- aggregate(cbind(long, lat) ~ region, data=test, FUN=mean)
-top.cnames <- inner_join(cnames,top.locations,by=c('location'='region'))
+cnames <- aggregate(cbind(long, lat) ~ region, data=top.map.locations, FUN=mean)
+top.cnames <- inner_join(cnames,top.locations,by=c('region'='location'))
 
-ggplot(top.map.locations, aes( x = long, y = lat, group = group)) +
+ggplot(top.map.locations, aes( x = long, y = lat)) +
   geom_polygon(aes(fill = n))
 
-top.map.locations %>% ggplot(aes(long,lat)) + geom_polygon(aes(group=group,fill=n)) + geom_polygon(aes(group=group),fill=NA,colour='black') +
-  geom_text(data=top.cnames,aes(label = region) , size = 4)
+top.map.locations %>% ggplot(aes(long,lat)) + geom_polygon(aes(group=group,fill=as.factor(n))) +
+  labs(fill = 'Countries '
+       ,title = 'Top 10 plane crash locations, 1908-2019'
+       ,x = NULL
+       ,y = NULL) +
+  geom_label(data=top.cnames,aes(long,lat,label=n)) +
+  theme(text = element_text(color = '#EEEEEE')
+        ,plot.title = element_text(size = 28)
+        ,plot.subtitle = element_text(size = 14)
+        ,axis.ticks = element_blank()
+        ,axis.text = element_blank()
+        ,panel.grid = element_blank()
+        ,panel.background = element_rect(fill = '#333333')
+        ,plot.background = element_rect(fill = '#333333')
+        ,legend.position = "none"
+        ,legend.background = element_blank()
+        ,legend.key = element_blank()
+  )
 ```
 
 
