@@ -1,3 +1,4 @@
+# RAW EDA script, 
 library(tidyverse)
 library(tidytext)
 library(tidyr)

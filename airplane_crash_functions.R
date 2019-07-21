@@ -1,3 +1,4 @@
+# functions used to clean data
 ExtractAirplaneUses <- function(x) {
   if (grepl("Military",x,ignore.case=TRUE)) {
     return("Military")

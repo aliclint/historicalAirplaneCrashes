@@ -1,17 +1,20 @@
 ---
-title: "Airplane Crash EDA"
-output: html_document
+title: "Question 2 - Airplane Crash EDA"
+author: "Clinton Ali"
+output:
+  html_document: default
+  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE)
+knitr::opts_chunk$set(echo = FALSE, include=FALSE, results="hide", warning = FALSE)
 source("airplane_crash_functions.R")
 library(tidyverse)
 library(tidytext)
 library(tidyr)
 ```
 
-## Scrape and read file into data
+
 ```{r read-data}
 file = "airplaneCrashData.csv"
 if(!TRUE %in% (list.files() == file)) { # Checks if file exists in local directory.
@@ -53,11 +56,11 @@ airplane.crash$ground <- as.numeric(airplane.crash$ground)
 # Processing date into month and year.
 airplane.crash$date <- as.Date(airplane.crash$date, "%B %d, %Y")
 airplane.crash$month <- format(as.Date(airplane.crash$date), "%m")
-airplane.crash$year <- format(as.Date(airplane.crash$date), "%Y")
+airplane.crash$year <- as.numeric(format(as.Date(airplane.crash$date), "%Y"))
 
 # 24H time of the crash. 
 airplane.crash$time <- as.numeric(airplane.crash$time)
-airplane.crash.cleaned <- airplane.crash %>% select(month, year, location, operator, ACtype, fatalities, aboard, uses, summary)
+airplane.crash.cleaned <- airplane.crash %>% select(month, year, location, operator, ACtype, fatalities, ground, aboard, uses, summary)
 airplane.na.count <- colSums(is.na(airplane.crash.cleaned))
 #nrow(airplane.crash.cleaned)
 airplane.crash.cleaned <- na.omit(airplane.crash.cleaned)
@@ -67,12 +70,43 @@ airplane.crash.cleaned <- na.omit(airplane.crash.cleaned)
 airplane.crash.cleaned <- airplane.crash.cleaned %>% mutate(deadProp = fatalities/aboard)
 ```
 
+```{r uses-loc-operator-count, eval=FALSE}
+# look at how many civil and military planes
+airplane.crash.cleaned %>% group_by(uses) %>% count()
+# civil airplanes dominate the chart so let's keep them together for now
+
+# let's look at counts of crashes
+airplane.crash.cleaned %>% group_by(location) %>% count() %>% arrange(desc(n)) %>% top_n(10) %>% ungroup()
+# us, russia, brazil, colombia lead the count. Huge disparity between USA and russia, maybe because the data is collected by a US company? Indeed, it is run by an entity based in the USA. But, further searching finds that they find the data from published books which are primarily in english. therefore, the historical accidents are mainly in english speaking countries.
+
+# let's look at airplane counts
+airplane.crash.cleaned %>% group_by(operator) %>% count() %>% arrange(desc(n))%>% top_n(10) %>% ungroup()
+# unsurprisingly the top two operators are aeroflot (russian) and U.s. air force (usa)
+
+# lets looka t proportion of people dead on the ground out of the fatalities.
+airplane.crash.cleaned %>% group_by(year,ground,fatalities) %>% mutate(propDeadGround = sum(ground)/sum(fatalities)) %>% ggplot(aes(x=year,y=propDeadGround)) + geom_point()
+# no differece in trends
+```
+# Key findings
+What were the most common reasons for plane crashes?
+
+* The most common reasons for plane crashes are related to poor weather conditions, engine failures and pilot error.
+
+What is the general trend of the proportion of lives lost in airplane crashes over time?
+
+* There seems to be a general trend where the yearly proportion of lives lost has decreased over time. This may be a byproduct of increased air travel regulations and innovations.
+
+Which countries have the most occurences of airplane crashes?
+
+* United States of America and Russia are countries that have the most recorded airplane crashes.
+
 ```{r text-mining}
-self_defined_stop_words <-tibble(word=c("crashed","cargo","en")) # 
+self_defined_stop_words <-tibble(word=c("crashed","cargo","en","emergency","conditions","caught")) # 
 
 tokens <- airplane.crash.cleaned %>% unnest_tokens(word, summary) %>% anti_join(stop_words) %>% anti_join(self_defined_stop_words)
 unigram_count <- tokens %>%
 count(word, sort = TRUE) # single words are not as meaningful, we need context
+
 
 bigrams <- airplane.crash.cleaned %>% unnest_tokens(bigram, summary, token = "ngrams", n = 2)
 bigrams_separated <- bigrams  %>%
@@ -89,6 +123,15 @@ bigrams_united <- bigrams_filtered %>%
   unite(bigram, word1, word2, sep = " ")
 top_bigrams <- bigrams_united %>% count(bigram, sort=TRUE) %>% top_n(10) # top 10 bigrams of reason of crash
 
+# plot unigrams
+top.unigram.plot <- unigram_count %>% top_n(10) %>% mutate(word = reorder(word, n)) %>%
+  ggplot(aes(word, n,fill=word,color=word)) +
+  geom_col() +
+  xlab(NULL) +
+  coord_flip() +
+  ggtitle("Figure 3 - Top 10 causes for airplane crash by single word") +
+  xlab("Causes") + ylab("Frequency")+ theme(legend.position = "none")
+
 # plot bigrams
 top.bigram.plot <- top_bigrams %>% 
   mutate(bigram = reorder(bigram, n)) %>%
@@ -96,32 +139,45 @@ top.bigram.plot <- top_bigrams %>%
   geom_col() +
   xlab(NULL) +
   coord_flip() +
-  ggtitle("Top 10 causes for airplane crash") +
+  ggtitle("Figure 4 - Top 10 causes for airplane crash by pairs of words") +
   xlab("Causes") + ylab("Frequency")+ theme(legend.position = "none")
-top.bigram.plot
+
+```
+```{r bigram-over-time}
+# lets see over time
+bigram.y1<- bigrams_united %>% filter(year < 1938) %>%  filter(year >= 1908) %>% count(bigram, sort=TRUE) %>% ungroup() %>% top_n(5)
+bigram.y2<- bigrams_united %>% filter(year < 1968) %>% filter(year >= 1938) %>% count(bigram, sort=TRUE) %>% ungroup() %>% top_n(5)
+bigram.y3<- bigrams_united %>% filter(year < 1998) %>% filter(year >= 1968) %>% count(bigram, sort=TRUE) %>% ungroup() %>% top_n(5)
+bigram.y4<- bigrams_united %>% filter(year < 2028) %>% filter(year >= 1998) %>% count(bigram, sort=TRUE) %>% ungroup() %>% top_n(5)
+# looks like the causes are similar year to year, mainly weather conditions
+# so we will stick with original bigram
 ```
 
-
 ```{r}
-airplane.crash.cleaned %>% group_by(year,month) %>% summarise(tot = sum(fatalities)) %>% ggplot(aes(y=tot,x=month,fill=month)) + geom_boxplot() + ggtitle("Boxplot of monthly fatalities") + scale_x_discrete(labels=c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")) +
+monthly <- airplane.crash.cleaned %>% group_by(year,month) %>% summarise(tot = sum(fatalities)) %>% ggplot(aes(y=tot,x=month,fill=month)) + geom_boxplot() + ggtitle("Boxplot of monthly fatalities") + scale_x_discrete(labels=c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec")) +
   xlab("Month") +
   ylab("Total Fatalities")+ theme(legend.position = "none")
+# looks like there are no seasonal trend if we look at the monthly fatalities.
 ```
 
 ```{r}
-airplane.crash.cleaned %>% drop_na()%>% group_by(year) %>% summarise(total.dead = sum(fatalities), total.aboard = sum(aboard)) %>% ggplot(aes(y=total.dead/total.aboard*100,x=year,group=10)) + geom_point() + geom_smooth(method='lm') +
-    xlab("Year") + ylab("% of Fatalities") + 
+plt2 <- airplane.crash.cleaned %>% drop_na()%>% group_by(year) %>% summarise(total.dead = sum(fatalities), total.aboard = sum(aboard)) %>% ggplot(aes(y=total.dead/total.aboard*100,x=year,group=10)) + geom_point() + geom_smooth(method='lm') +
+    xlab("Year") + ylab("Fatalities (%)") + 
     scale_x_discrete(breaks = seq(from = 1908, to = 2019, by = 10)) +
-    ggtitle("Percentage of fatalities by year, 1908 - 2019")
+    ggtitle("Figure 2 - Average Percentage of fatalities by year, 1908 - 2019")
+
+# Fitting a regression line, we can see a general downward trend over time, which is good! Less proportion of people dead when a plane crashes.
 ```
 
 ```{r}
+# lets see if we can visualize this in maps
 top.locations <- airplane.crash.cleaned %>% group_by(location) %>% count() %>% arrange(desc(n)) %>% ungroup() %>% top_n(10)
+# bar plot
 top.locations$n <- as.numeric(top.locations$n)
-   top.locations %>% mutate(location=reorder(location,n)) %>% ggplot(aes(location, n)) + geom_col(aes(fill=as.factor(n))) + coord_flip() +
-     ggtitle("Number of plane crashes by country") + xlab("Country") + ylab("Frequency")+ theme(legend.position = "none")  + scale_fill_brewer(palette='Spectral',direction=-1) +
+   plt1<-top.locations %>% mutate(location=reorder(location,n)) %>% ggplot(aes(location, n)) + geom_col(aes(fill=as.factor(n))) + coord_flip() +
+     ggtitle("Number of plane crashes by country, 1908-2019") + xlab("Country") + ylab("Frequency")+ theme(legend.position = "none")  + scale_fill_brewer(palette='Spectral',direction=-1) +
      theme(axis.ticks=element_blank()
-             ,axis.text=element_blank()
+             
            ) +
     geom_label(aes(y = 0.7*n, label = n))
    
@@ -134,11 +190,8 @@ top.locations$n <- as.numeric(top.locations$n)
 
 cnames <- aggregate(cbind(long, lat) ~ region, data=top.map.locations, FUN=mean)
 top.cnames <- inner_join(cnames,top.locations,by=c('region'='location'))
-
-ggplot(top.map.locations, aes( x = long, y = lat)) +
-  geom_polygon(aes(fill = n))
-
-top.map.locations %>% ggplot(aes(long,lat)) + geom_polygon(aes(group=group,fill=as.factor(n))) +
+# plot with map doesn't give a clear indicator as compared to a regular bar plot
+country.locations <- top.map.locations %>% ggplot(aes(long,lat)) + geom_polygon(aes(group=group,fill=as.factor(n))) +
   labs(fill = 'Countries '
        ,title = 'Top 10 plane crash locations, 1908-2019'
        ,x = NULL
@@ -155,9 +208,29 @@ top.map.locations %>% ggplot(aes(long,lat)) + geom_polygon(aes(group=group,fill=
         ,legend.position = "none"
         ,legend.background = element_blank()
         ,legend.key = element_blank()
-  )
+  ) 
 ```
 
+## Analysis
+
+In the century after the advent of planes there have been developments in safety of air travel that are driven by the airplane crashes in the past. There were about 5002 recorded plane crashes which are comprised of civil (85%) and military (15%), as there were a number of wars with airplanes that has spanned in the last century. The frequency of crashes peak in the 1940s and start tapering down from the 1990s which shows some sign of improvement. Moreover, the crashes do not have a seasonal trend and may happen anytime of the year.
+
+From this historical data, the most frequent locations of plane crashes in order are USA, Russia, Brazil, Colombia, France, Canada, India, UK, Indonesia and China (Fig 1). Coincidentally they are also countries with the largest land masses and challenging terrain.  Furthermore, 6 of these countries are ranked in the top 10 for air traffic [^1] and will increase the chances of accidents albeit a small one. However in figure 2 we can see that there is a decrease in percentage of people dead from airplane crashes over time. This implies that there were improvements made by the aviation industry to improve airplane safety.
+
+From the summaries provided in the historical data we were able to determine the most popular reasons of plane crashes. When controlled for single words (fig 3), we find that ‘pilots’ and ‘runways’ are two common reasons that caused airplane crashes. These single word causes are great at narrating causes that relate to human error. However, this can be supplemented by controlling for pairs of words to give a better context. According to figure 4 we find that ‘poor weather’ and ‘engine failure’ are some of the most common reasons of plane crashes. Surprisingly, when these pairs of words are controlled for the aircraft’s uses, either military or civil, we find that there aren’t significantly different. Perhaps, we can say that poor weather and engine failure come down to chance and they can be minimized but not completely removed from improvements in airplane technology and regulations.
+
+	In summary, we can see that the general trend of airplane crashes to be less as time goes on. Along with that, the severity of the crash will decrease over time as more regulations and advancements come into place. However, plane crashes can’t be completely eliminated but only mitigated through better technology and regulations. 
+
+[^1]: http://world.bymap.org/AirTrafficPassengers.html
 
 
+## Appendix
+
+```{r, final-output, include=TRUE}
+plt1
+plt2
+top.unigram.plot
+top.bigram.plot
+```
   
+
