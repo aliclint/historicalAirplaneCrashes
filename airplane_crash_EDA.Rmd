@@ -1,9 +1,8 @@
 ---
-title: "Question 2 - Airplane Crash EDA"
+title: "Airplane Crash EDA"
 author: "Clinton Ali"
 output:
   html_document: default
-  pdf_document: default
 ---
 
 ```{r setup, include=FALSE}
